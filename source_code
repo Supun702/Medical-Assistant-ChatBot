@@ -1,0 +1,54 @@
+import streamlit as st
+from PyPDF2 import PdfReader
+from langchain_classic.chains.question_answering import load_qa_chain
+from langchain_community.chat_models import ChatOpenAI
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+
+
+OpenAI_API_KEY = "Input Your API Key here..."
+
+st.header("MEDIBot")
+
+with st.sidebar:
+    st.title("MEDI Notes")
+    file = st.file_uploader("Upload Medical notes PDF and start asking questions", type="pdf")
+
+if file is not None:
+    my_pdf = PdfReader(file)
+    text=""
+    for page in my_pdf.pages:
+        text += page.extract_text()
+        #st.write(text)
+
+    #break it into Chunks
+    splitter = RecursiveCharacterTextSplitter(separators= ["\n"], chunk_size=300, chunk_overlap=50, length_function=len)
+    splitter.split_text(text)
+    chunks=splitter.split_text(text)
+    #st.write(chunks)
+
+    ##creating Object of OpenAIEmbeddings class that let us connect with OpenAI's Embedding Models
+    embeddings = OpenAIEmbeddings(api_key= OpenAI_API_KEY)
+
+    ##Creating VectorDB & Storing embeddings into it
+    vector_store = FAISS.from_texts(chunks, embeddings)
+
+    #get user query
+    user_query = st.text_input("Type your query here")
+
+    #semantic search from vector store
+    if user_query:
+        matching_chunks = vector_store.similarity_search(user_query)
+
+        #define our LLM
+        llm = ChatOpenAI(api_key=OpenAI_API_KEY,
+        max_tokens= 300,
+        temperature= 0,             //need to be 0 to get exact answer..
+        model= "gpt-3.5-turbo"
+        )
+
+    #Generate response
+    chain = load_qa_chain(llm, chain_type="stuff")
+    output = chain.run(question=user_query, input_documents=matching_chunks)
+    st.write(output)
